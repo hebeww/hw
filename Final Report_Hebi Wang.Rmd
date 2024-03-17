@@ -925,10 +925,7 @@ ggplot(data15, aes(x = g1trace, y = median_math_score, fill = g1trace)) +
 <br>Schools should prioritize small class sizes for students, as these settings foster more personalized instruction, crucial for early student development. Consideration should be given to reallocating resources to facilitate smaller class sizes, potentially requiring adjustments in budgeting for teacher salaries, classroom space, and teaching materials to make this approach more feasible and effective.
 <br>However, implementing small class sizes broadly may pose challenges, notably in increasing educational costs. Careful management of available space, teacher availability, and budget constraints is necessary. A cost-benefit analysis is essential to ensure the financial sustainability of reduced class sizes and that the educational benefits justify the costs.
 <br>Furthermore, the impact of small class sizes may differ based on other factors, such as student ethnicity, school environment, and curriculum. Additional considerations are required for broader application, including the long-term effects of small class sizes beyond first grade. Although this report focuses on first-grade math scores and attempts to account for class size, kindergarten scores, and teacher ability, other significant variables like parental involvement or socioeconomic status, not considered in this report, may also affect the outcomes.
-
-# Acknowledgement
-
-In the preparation of this report, I integrated code, terminology, and formulas from the lecture notes, as well as the code from the STA 206 discussion notes. I am grateful to my classmates—Feini Pek, Fanling Liu, and Jieying Ma—for their helpful suggestions throughout this process. Additionally, I wish to express my gratitude to STA 207 professor and teaching assistant for their supportive directions.        
+      
 
 # Reference
 
