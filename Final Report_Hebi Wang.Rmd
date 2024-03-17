@@ -1,0 +1,978 @@
+---
+title: '207 Final report:Analyzing the Impact of Class Type on Student Math Performance:
+  Insights from Project STAR'
+author: "Hebi Wang"
+date: "2024-03-10"
+output:
+  html_document:
+    toc: yes
+    toc_depth: 4
+    toc_float:
+      collapsed: yes
+      smooth_scroll: yes
+    df_print: paged
+    number_sections: yes
+  word_document:
+    toc: yes
+    toc_depth: '4'
+editor_options:
+  markdown:
+    wrap: 72
+---
+
+```{r global_options, include=FALSE}
+knitr::opts_chunk$set(fig.pos = 'H',warning = FALSE,message = FALSE)
+```
+
+# Abstract
+
+This report utilizes data from the Harvard Dataverse, focusing on the Project STAR, to analyze first-grade students' math scores. Employing a two-way ANOVA model, Tukey's HSD test, nonparametric methods, and GEE, we explored the impact of class type on first-grade math scores. We found that class type (small class, regular class, and regular class with aide) significantly affects students' math performance, with small class teaching showing the most substantial improvement in math scores. This positive impact of small class teaching was still confirmed after considering teacher teaching ability and kindergarten scores as covariates. Through model diagnostics and sensitivity analysis, the robustness of these findings was further verified. The report also discusses the issue of selection bias, noting that the sample may not represent students and teachers from all racial or cultural backgrounds. Finally, based on these analyses, educational practice recommendations are proposed.
+
+
+# Introduction
+
+This dataset contains math and reading scores from kindergarten through third grade.  In this project, the original dataset is recorded at the student level, and we will aggregate the data to generate a single record for each class (teacher), focusing solely on first-grade math scores.  Our particular questions of interest include: Does class size significantly affect students' math performance?  If so, which class type is associated with the highest math scores in the first grade?  Will the teacher's teaching experience, students' academic background, and other potential confounding variables moderate the effect of class size on student achievement?  By addressing these questions, the report aims to provide empirical evidence to educational policymakers on how class structure can be optimized to enhance student academic achievements.
+
+The analysis is motivated by the ongoing interest and debate in the educational field regarding the relationship between class size and student academic achievement.  The layout of this report unfolds logically, starting with an introduction to the research background and an overview of the Project STAR, followed by a detailed description of the data analysis methods adopted, including descriptive statistics, missing value treatment, data aggregation, and multivariate analysis.  Building on this, the report delves into the relationship between class size and student math performance, verifying the robustness of the research hypothesis through inferential and sensitivity analyses.  It also considers the impact of covariates like the teacher's teaching ability and students' kindergarten performance on learning outcomes.  We explore the effect of class type on performance by attempting to control for these variables.  Moreover, the report acknowledges the teacher's teaching ability and students' kindergarten performance as significant factors influencing student learning outcomes.  Finally, the report offers recommendations based on findings, reflects on the study's limitations, and the potential issues of selection bias, pointing out directions for further research, including how small class teaching strategies can be implemented and evaluated across different educational settings and student groups.  
+ 
+# Background 
+
+The data for this analysis were sourced from the Harvard Dataverse, focusing specifically on the Project STAR (Student/Teacher Achievement Ratio) dataset. Project STAR was a landmark four-year longitudinal study on class size conducted in Tennessee in the late 1980s, funded by the Tennessee General Assembly and carried out by the State Department of Education. It involved over 11,000 students across 79 schools who were randomly assigned to one of three class types: small (13 to 17 students per teacher), regular (22 to 25 students per teacher), and regular with an aide (22 to 25 students with a full-time teacher's aide). Classroom teachers were randomly assigned to the classes they taught. The interventions started as students entered kindergarten and continued through the third grade. STAR encompassed a broad spectrum of students, teachers, and schools within Tennessee, offering a comprehensive dataset for examining educational outcomes. The study's sampling mechanism, which involved random assignment of students to different class types, provided a solid foundation for analysis due to its randomized control trial design. Project STAR aimed to examine the effects of class size on student achievement among other factors.
+
+The core of the STAR project lies in its design of random assignment. Students and teachers were randomly assigned to one of three types of class settings, which helped ensure that, aside from class size, other variables that could affect student learning outcomes were balanced across different types of classes. The dataset records a large number of relevant variables, offering a rich dimensionality of data. The experiment focused not only on students' performance during the experimental year but also tracked their academic achievements in subsequent grades, even into middle and high school, to study the long-term effects of small class teaching. This project was conducted in many schools across Tennessee, covering urban, suburban, and rural areas, as well as different socioeconomic backgrounds, which enhanced the general applicability of the experiment's results.
+
+# Descriptive analysis
+ 
+```{r echo=FALSE, include=FALSE}
+library(ggplot2)
+library(dplyr)
+library(tidyr)
+library(psych)
+library(knitr)
+library(car)
+library(haven)
+library(DT)
+library(lme4)
+library(MASS)
+options(qwraps2_markup="markdown")
+data <- read_spss("STAR.sav")
+```
+
+## Quantitative variables
+```{r echo=FALSE}
+data1 = data[, c("gender", "race", "birthyear", "g1classtype", "gktmathss", "g1schid", 
+                        "g1surban", "g1tchid", "g1tgen", "g1trace", "g1thighdegree", 
+                        "g1tcareer", "g1tyears", "g1classsize", "g1freelunch", "g1tmathss")]
+```
+
+<br>Among the variables of interest, there are three continuous variables: students' math scores (g1tmathss), teachers' years of teaching experience (g1tyears), and class size (g1classsize) for the students in the first grade. We will further explore these three variables through descriptive statistics in the following sections.
+<br>Here is a descriptive statistics table for quantitative variables. They
+represent the teaching experience of each student's first-grade teacher
+and their math scores in the first grade, respectively.
+```{r echo=FALSE}
+describe(data1[, c("g1tyears", "g1tmathss")], quant=c(0.25, 0.5, 0.75))
+```
+<br>Here are the bar charts of math grade and years of teacher's teaching
+experience in 1st grade.
+<br>As you can see from the Bar Charts of math grade, the distribution is slightly skewed from the normal distribution. For variables that represent a teacher's teaching experience, most of the teachers are between 0 and 40 years old. The higher the teaching age, the lower the number of teachers.
+
+```{r, fig.height = 5, fig.width = 10, fig.align = "center", warning=FALSE, message=FALSE, echo=FALSE}
+longdata<- pivot_longer(data1[,  c("g1tmathss", "g1tyears")], cols = everything(), names_to = "Variable", values_to = "Value")
+ggplot(longdata, aes(x = Value, fill = Variable)) +
+  geom_bar() +
+  facet_wrap(~Variable, scales = "free") +
+  labs(title = "Bar Charts of math grade and years of teacher's teaching experience",
+       x = "Value",
+       y = "Frequency") +
+  theme_minimal()
+```
+
+```{r echo=FALSE, results="asis", message=FALSE}
+cols_to_factor <- c("gender", "race", "birthyear","g1classtype", "g1surban", "g1tgen", "g1trace", "g1thighdegree", "g1tcareer", "g1freelunch")
+cat('
+<style>
+table {
+  font-size: 0.8em; 
+}
+</style>
+
+')
+
+cat('
+<style>
+table td, table th {
+  padding: 3px 8px; 
+  line-height: 0.5; 
+}
+</style>
+')
+data1[cols_to_factor] <- lapply(data1[cols_to_factor], factor)
+library(qwraps2)
+library(PMCMRplus)
+library(reshape)
+library(openxlsx)
+new_summary = qsummary(data1[,c("gender", "race",  "birthyear","g1classtype","g1surban", "g1tgen", "g1trace", "g1thighdegree", "g1tcareer", "g1freelunch")],n_perc_args = list(digits=1, show_symbol=TRUE, show_denom="always"))
+#summary_table(data1, new_summary)
+disdata=as.data.frame(summary_table(data1, new_summary))
+```
+Because of the definition of class type, the graph of the distribution of student's class size looks like a combination of two small normal distributions with average around 15 and 23. Detailed analysis about class size will be presented later.
+```{r, fig.height = 3, fig.width = 5, fig.align = "center", warning=FALSE, message=FALSE, echo=FALSE}
+ggplot(data1, aes(x = g1classsize)) +
+  geom_bar(fill = "skyblue") +
+  labs(title = "Distribution of student's class size in 1st grade ", x = "class size", y = "Frequency")
+```
+
+## Categorical variable
+<br>Here is the descriptive statistics for ten categorical variable:
+"gender", "race", "birthyear", "g1classtype", "g1surban", "g1tgen",
+"g1trace", "g1thighdegree", "g1tcareer", and "g1freelunch".\
+They respectively represent the student's gender, race, birthyear, class
+type in the first grade, school urbanicity in the first grade, the
+gender, race, the highest degree,their career level of the student's
+teacher in the first grade, and whether the student received free lunch
+in the first grade.\
+<br>Although these variables may not all be utilized in subsequent analyses, they are closely related to the questions we are curious about. By examining the specific meanings and distributions of these variables, we can understand the overall characteristics of our sample. The table below records their frequencies, proportions, and the number of
+missing values.
+```{r, echo=FALSE,message=FALSE, results='asis'}
+library(knitr)
+library(kableExtra)
+
+ddf <- data.frame(
+  value = c("gender","1","2","Unknown/Missing","race", "1", "2", "3", "4",  "5",  "6",  "Unknown/Missing",  "birthyear",  "1977","1978","1979", "1980", "1981",  "Unknown/Missing", "g1classtype",  "1",  "2",  "3",  "Unknown/Missing",  "g1surban", "1","2","3","4","Unknown/Missing",  "g1tgen",  "1",  "2",  "Unknown/Missing",  "g1trace",  "1","2","Unknown/Missing",  "g1thighdegree",  "2", "3", "5",  "6", "Unknown/Missing", "g1tcareer",  "1","2","3","4","5", "6", "Unknown/Missing", "g1freelunch", "1","2","Unknown/Missing"),
+  
+label = c("Gender of student","Male","Female", "","Race of student", "White","Black", "Asian", "Hispanic", "Native American", "Other",  "","Birthyear of student","1977",  "1978", "1979",  "1980",  "1981", "", "class type", "small", "regular","regular+aide","", "School urbanicity","Inner city",   "Suburban", "Rural", "Urban","","Gender of teacher","Male", "Female","", "Race of teacher", "White","Black", "", "Teacher highest degree", "Bachelors", "Masters",  "Specialist",  "Doctoral","", "Teacher career ladder level",  "Chose not to be on career ladder", "Apprentice","Probation","Ladder level 1",  "Ladder level 2", "Ladder level 3", "","Free/reduced lunch status",  "Free lunch","Non-free lunch",""),
+  percent = c("", "6,124/11,581 (52.9%)","5,457/11,581 (47.1%)",  "20 (0.17%)",  "",  "7,200/11,467 (62.8%)",  "4,180/11,467 (36.5%)",  "32/11,467 (0.3%)",  "21/11,467 (0.2%)",  "14/11,467 (0.1%)",  "20/11,467 (0.2%)",  "134 (1.16%)",  "",  "58/11,533 (0.5%)", "645/11,533 (5.6%)", "3,917/11,533 (34.0%)",  "6,889/11,533 (59.7%)",  "24/11,533 (0.2%)",  "68 (0.59%)",  "",  "1,925/6,829 (28.2%)",  "2,584/6,829 (37.8%)",  "2,320/6,829 (34.0%)",  "4,772 (41.13%)",  "",  "1,380/6,829 (20.2%)",
+  "1,586/6,829 (23.2%)",  "3,237/6,829 (47.4%)",  "626/6,829 (9.2%)",  "4,772 (41.13%)",  "",  "29/6,810 (0.4%)",  "6,781/6,810 (99.6%)",  "4,791 (41.30%)",  "",  "5,623/6,810 (82.6%)",  "1,187/6,810 (17.4%)",  "4,791 (41.30%)",
+ "",  "4,456/6,810 (65.4%)",  "2,294/6,810 (33.7%)",  "38/6,810 (0.6%)",  "22/6,810 (0.3%)",  "4,791 (41.30%)",  "",  "506/6,787 (7.5%)",  "718/6,787 (10.6%)",  "666/6,787 (9.8%)",  "4,492/6,787 (66.2%)",  "114/6,787 (1.7%)",  "291/6,787 (4.3%)",  "4,814 (41.50%)",  "",  "3,429/6,650 (51.6%)",  "3,221/6,650 (48.4%)",  "4,951 (42.68%)")
+)
+
+kable(ddf, "html") %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive"))
+
+```
+
+## Missing value
+<br>From the results of the descriptive statistics mentioned above, we can observe a significant number of missing values. To examine the distribution of missing values for several variables in the first grade, we constructed a missing value matrix diagram. 
+```{r, fig.height = 6, fig.width = 11, fig.align = "center", warning=FALSE, message=FALSE, echo=FALSE}
+library(naniar)
+data1_updated <- data1[, -5]
+vis_miss(data1_updated)
+```
+<br>As shown in the diagram, the black sections represent missing values, while the gray areas indicate data presence. Notably, except for the first three variables, the black sections almost form a straight line, indicating systematic missingness. Additionally, there are some scattered black areas, likely representing randomly missing data. Apart from this, many students' first-grade-related variables tend to be missing altogether. In our subsequent analysis, we will use the class as the unit of analysis. Without knowing a student's math score, it is challenging to determine their class type since the data that could link these students to their classes are also missing. Consequently, we cannot aggregate their math scores (even if not missing) into their respective classes. In a data set, given that these missing data are all related to the first grade, it is highly likely that the overall absence of data is due to these students not participating in the STAR program during their first grade.
+<br>Due to the extensive amount of missing data, solely using the median, mean, or mode for imputation might present certain flaws.  Since the missing data are not entirely random, such imputation could introduce bias, affecting the distribution characteristics of the data.  This might lead to a situation where a large number of data points are concentrated around a particular value.  Utilizing other quantities to predict missing values is also not very feasible, as several variables in these observations are almost entirely missing together, leaving very little room for prediction.  Consequently, the accuracy of such predictions would not be high.  Therefore, we consider removing the missing values.  However, before proceeding with the deletion, we need to check whether removing observations with missing values will significantly impact the distribution.  We plan to use graphical tools (such as box plots and histograms) to compare the distribution of variables before and after the deletion of missing values, examining whether there has been a significant change in data distribution.  Specifically, we can employ different graphical methods for categorical and continuous variables.  For categorical variables, bar charts can be used to display the frequency of each category;  for continuous variables, box plots 
+is an appropriate choice.  The following pairs of graphs show the distribution of each variable in the data with missing observations not removed and with missing observations removed.
+
+```{r, fig.height = 3, fig.width = 5, fig.align = "center", warning=FALSE, message=FALSE, echo=FALSE}
+
+continuous_vars <- c("g1tyears", "g1classsize", "g1tmathss")
+for (var in continuous_vars) {
+p1 <- ggplot(data1, aes_string(x = "factor(0)", y = var, fill = "factor(0)")) +
+          geom_boxplot() +
+          labs(title = paste(var, "- Original"), y = var, x = "") +
+          scale_fill_manual(values = c("skyblue"), name = "") +
+          theme_minimal()
+    
+ data_no_missing <- na.omit(data1[, c(var)])
+    
+   p2 <- ggplot(data.frame(data_no_missing), aes_string(x = "factor(0)", y = var, fill = "factor(0)")) +
+          geom_boxplot() +
+          labs(title = paste(var, "- No Missing"), y = var, x = "") +
+          scale_fill_manual(values = c("grey"), name = "") +
+          theme_minimal()
+   library(gridExtra)
+    grid.arrange(p1, p2, ncol = 2)
+}
+```
+
+
+```{r, fig.height = 3, fig.width = 5, fig.align = "center", warning=FALSE, message=FALSE, echo=FALSE}
+
+categorical_vars <- c("gender", "race", "birthyear", "g1classtype", 
+                      "g1surban", "g1tgen", "g1trace", "g1thighdegree", 
+                      "g1tcareer", "g1freelunch")
+for (var in categorical_vars) {
+ 
+   p1 <- ggplot(data1, aes_string(x = var, fill = var)) +
+          geom_bar() +
+          labs(title = paste( var, "- Original"), x = var, y = "Count") +
+          theme_minimal() +
+          theme(legend.position = "none")
+  
+    data_no_missing <- na.omit(data1[, c(var)])
+    p2 <- ggplot(data.frame(data_no_missing), aes_string(x = var, fill = var)) +
+          geom_bar() +
+          labs(title = paste(var, "- No Missing"), x = var, y = "Count") +
+          theme_minimal() +
+          theme(legend.position = "none")
+    
+    grid.arrange(p1, p2, ncol = 2)
+}
+```
+<br>Visualization methods might not allow the naked eye to capture very subtle changes in distribution, but we can observe that the overall distribution of the data has not altered due to the removal of observations with missing values. Therefore, we can proceed to directly delete these observations with missing values.
+
+
+## Aggregating data
+<br>From the dataset, it's readily apparent that the number of students assigned to each teacher varies. The original dataset was recorded with individual students as the unit of analysis. To derive a single summary measure with the teacher as the unit, we must aggregate the students' performance, which is their math scores in the 1st grade. Therefore, we need to select an appropriate summary measure. To make a more informed choice of this summary measure, let's examine the number of students under each teacher.
+<br>For the next study, we need to remove the missing values of the four
+variables we need: g1tchid (teacherid), g1classtype (classtype), g1schid
+(school id), and g1tmathss (math score). After deletion, there are still 6,598 observations in the
+dataset.
+
+```{r echo=FALSE}
+data2 <- data1 %>%
+  filter(!is.na(g1tchid) & !is.na(g1classtype) & !is.na(g1schid) & !is.na(g1tmathss))
+```
+<br>The following graph and table display the number of students in each
+teacher's class selected for the dataset. It can be observed that the
+sample size per class ranges from 11 to 29. This indicates a relatively
+small sample size for each teacher.
+
+```{r echo=FALSE}
+teacher_id_freq <- data2 %>%
+  count(g1tchid)
+n_only <- teacher_id_freq %>%
+  dplyr::select(n) 
+summary(teacher_id_freq$n)
+```
+
+<br>
+<br>The actual number of teachers is too large, and only a part of them are
+captured and shown in the figure.
+
+```{r, fig.height = 4, fig.width = 12, fig.align = "center", warning=FALSE, message=FALSE, echo=FALSE}
+ggplot(data2, aes(x = factor(g1tchid))) +
+  geom_bar() +
+  labs(title = "Number of Students per Teacher",
+       x = "Teacher ID",
+       y = "Number of Students") +
+  theme_minimal() +
+  scale_x_discrete(breaks = seq(min(data2$g1tchid), max(data2$g1tchid), by = 35))
+```
+<br>
+The figure below shows the Distribution of Math Scores in 1st Grade.
+Let's take it out again and take a closer look. We can see that the
+distribution of math scores is not very symmetrical.
+
+```{r, fig.height = 3, fig.width = 5, fig.align = "center", warning=FALSE, message=FALSE, echo=FALSE}
+ggplot(data2, aes(x = g1tmathss)) +
+  geom_bar(fill = "skyblue") +
+  labs(title = "Distribution of Math Scores in 1st Grade ", x = "Math Score", y = "Density")
+```
+
+<br>Therefore, We should chose the median as the summary measure. Choosing the median as the summary measure offers several advantages, particularly in scenarios with diverse and uneven data distributions. Here are several reasons that support this choice:
+<br>The distribution of math scores is not symmetrical. When the data distribution is asymmetric, the median is often considered to be a better measure of central trend than the mean. It can realistically reflects the central location of the data set.
+<br>For teachers with a small number of students, even a single outlier can significantly skew the mean. The median, by not being affected by extreme values, provides a more reliable measure of central tendency in these cases.
+<br>In statistical analyses where normal distribution assumptions cannot be met, the median serves as a suitable measure for non-parametric tests. These tests are often used in educational research where the data may not follow a normal distribution.
+<br>By focusing on the median, the analysis avoids the pitfalls of outlier influence, provides insights into the typical student's performance under different teachers, and ensures that the findings are robust, interpretable, and statistically valid.
+<br>
+<br>
+<br>The table below shows the results of aggregated data, namely the median math scores of first grade students for each teacher.You can also retrieve the median math scores
+in the first grade for students in a specific teacher's class included
+in the dataset by searching for the Teacher ID.
+
+```{r echo=FALSE}
+measure <- data2 %>%
+  group_by(g1tchid) %>%
+  summarise(median = median(g1tmathss))
+datatable(measure, options = list(pageLength = 5), 
+          colnames = c('Teacher ID', 'Median Math Score'),
+          caption = 'Summary Measure: Median Math Scores by Teacher ID')
+```
+<br>
+<br>
+
+## Multivariate descriptive statistics for the outcome
+<br>
+Outcome v.s. class types:
+```{r, fig.height = 4, fig.width = 6, fig.align = "center", warning=FALSE, message=FALSE, echo=FALSE}
+
+#Outcome v.s. class types
+class_table <- data2 %>%
+  dplyr::select(g1tchid, g1classtype) %>%
+  dplyr::distinct()
+
+class_table <- class_table %>%
+  dplyr::arrange(g1tchid)
+
+outcome <- cbind(measure, class_table[, 2])
+colnames(outcome)[3] <- "g1classtype"
+
+outcome$g1classtype <- factor(outcome$g1classtype, levels = c(1, 2, 3), labels = c("Small", "Regular", "Regular+aide"))
+
+
+ggplot(outcome, aes(x = g1classtype, y = median, fill = g1classtype)) +
+  geom_boxplot(color = "blue") +
+  labs(title = "Boxplot of Median Scores by Class Type",
+       x = "Class Type",
+       y = "Median Score",
+       fill = "Class Type")
+
+```
+<br>As can be seen from the figure, the grades of Small classes may be higher than those of Regular+aide classes, and greater than those of Regular classes.The effect of class type on first-grade math scores can be significant. However, this is only an intuitive result obtained from the graph. whether the class type has a statistically significant impact still requires further quantitative validation.
+<br>
+<br>Outcome v.s. school IDs:
+<br>
+```{r, fig.height = 6, fig.width = 11, fig.align = "center", warning=FALSE, message=FALSE, echo=FALSE}
+#Outcome v.s. school IDs:
+cols_to_factor2 <- c("gender", "race", "birthyear", "g1classtype", "g1schid", "g1surban", "g1tchid", "g1tgen", "g1trace", "g1thighdegree", "g1tcareer", "g1tyears", "g1freelunch")
+
+data2[cols_to_factor2] <- lapply(data2[cols_to_factor2], factor)
+
+class_table <- data2 %>%
+  dplyr::select(g1tchid, g1schid) %>%
+  dplyr::distinct()
+
+class_table <- class_table %>%
+  dplyr::arrange(g1tchid)
+
+outcome2 <- cbind(measure, class_table[["g1schid"]])
+colnames(outcome2)[3] <- "g1schid"
+
+outcome2$g1schid <- factor(outcome2$g1schid)
+
+ggplot(outcome2, aes(x = g1schid, y = median, fill = g1schid)) +
+  geom_boxplot(color = "blue") +
+  labs(title = "Boxplot of Median Scores by School ID",
+       x = "School ID",
+       y = "Median Score",
+       fill = "School ID") +
+  scale_x_discrete(labels = function(x) ifelse(as.numeric(x) %% 10 == 0, x, ""))
+
+```
+<br>These two plots are essentially the same as the main effect plots.
+<br>We were surprised to find that the boxplot varies widely between schools, suggesting that different schools may have a significant impact on first-grade math score.
+<br>The wide variation in first-grade math scores between schools may stem from a range of factors. Educational resources and facilities play a critical role, with schools better equipped with modern teaching materials and technology often seeing higher scores. The expertise and experience of teachers can significantly influence student outcomes, as highly qualified educators tend to deliver more effective instruction. Socioeconomic factors are also pivotal; Psychological and social environments within schools, characterized by a positive climate and strong peer support, encourage academic achievement.   This complex interplay of variables highlights the multifaceted nature of educational achievement and the significant impact of school-specific conditions on student performance.  This further illustrates that student performance is influenced by a multitude of factors. While exploring the impact of class type on student outcomes, we should also consider the effects of other covariates. Specific operational details will be provided in subsequent modules.
+
+<br>
+
+# Inferential analysis
+
+## Model proposal
+<br>Through descriptive analysis, we've observed that for first-grade students, both school ID and class type may have a significant impact on the median math scores.  Given that these two variables are categorical, it seems prudent to consider employing a 2-way ANOVA model to attempt fitting these variables.
+
+<br>We can define a two-way ANOVA model:
+
+$$Y_{ijk} = \mu_{..} + \alpha_{i} + \beta_{j} + \epsilon_{ijk}$$
+$$\ \epsilon_{ijk}\stackrel{iid}{\sim}N(0,\sigma^2)$$
+
+where
+
+<br>$Y_{ijk}$:students' first-grade math scores
+
+<br>$\mu_{..}$:over mean/mean of all sample
+
+<br>Class type denoted as factor $\alpha_i$: small ($i=1$), regular
+($i=2$), regular with aide ($i=3$).
+
+<br>School ID denoted as factor$\beta_j$.
+
+<br>$ε_{ijk}$ is the random noise term.
+
+<br>Constraints on the parameter：
+
+$$\sum_{i}\alpha_i=\sum_{j} \beta_j=0$$
+<br>
+<br>Assumptions on model：
+
+1\. Independence: The observations within each combination of class type
+and school areindependent of each other.
+
+2.Normality: We assume that the residuals ($ε_{ijk}$) follow a normal
+distribution.
+
+3\. Homogeneity of Variances (Homoscedasticity): The variability in
+residuals is assumed to remain consistent across all factor levels.
+<br>
+<br>Consider adding the interaction term $\alpha_{ij}$, the alternative
+model：
+
+$$Y_{ijk}=\mu_{..}+\alpha_i+\beta_j+\alpha\beta_{ij}+\epsilon_{ijk},\ \epsilon_{ijk}\stackrel{iid}{\sim}N(0,\sigma^2)$$
+<br> it might be beneficial to add an interaction term as part of an alternative model because it evaluates both the individual effects of each categorical variable on the dependent variable and their combined interaction on outcomes. This approach is particularly valuable in educational research, enabling a deeper understanding of how various educational settings and teaching methodologies affect student performance. By examining both main and interaction effects, we gain crucial insights into the consistency of class type's impact on math scores across different schools or its significant variation from one school to another, thereby providing a more nuanced analysis of educational influences.
+<br>
+
+## Model fitting
+
+### Using median as summary measure
+<br>Based on our previous discussion, let's initially use the median as our summary measure. Let's explore if we need to
+add an interaction item first:
+
+```{r echo=FALSE}
+
+data3 <- data2 %>%
+  group_by(g1tchid, g1schid, g1classtype) %>%
+  summarise(median_math_score = median(g1tmathss, na.rm = TRUE)) %>%
+  ungroup()
+colnames(data3)[colnames(data3) == "g1tchid"] <- "teacherid"
+colnames(data3)[colnames(data3) == "g1schid"] <- "schoolid"
+colnames(data3)[colnames(data3) == "g1classtype"] <- "class_type"
+colnames(data3)[colnames(data3) == "median_math_score"] <- "math_grade"
+```
+
+The following utilizes Analysis of Variance to compare two models,
+determining whether interaction terms need to be retained according to
+significance. The null hypothesis here is that the interaction between
+the two variables does not exist. P-value is large, which means we should accept the null hypothesis. In
+this case, we should drop the interaction terms.
+
+
+```{r echo=FALSE}
+nointer = lm(math_grade~class_type+schoolid, data=data3)
+withinter = lm(math_grade~class_type+schoolid+class_type:schoolid, data=data3)
+anova(nointer, withinter)
+```
+
+<br>From this analysis, we can decisively opt for a 2-way ANOVA model that does not include interaction terms. Upon importing the data into the model, we are able to obtain the estimated coefficients of beta for each school ID, along with some additional information. 
+<br>The table below reports the estimated coefficients of beta for each
+school id. You can also retrieve the estimated coefficients by searching
+school id.
+
+```{r echo=FALSE}
+coeff = as.data.frame(nointer$coefficients)
+subset_data = coeff %>% slice(-(1:3))
+datatable(subset_data, options = list (pageLength =5), colnames = c('ID', 'coefficients '),caption = 'coefficients of beta for each school id')
+```
+<br>Assuming a significance level of 0.05, we conducted a type II 2-way ANOVA test for two factors. The purpose of this analysis is to investigate whether class type and school ID have a significant impact on the median math scores. The hypotheses for the two factors are as follows:
+<br>The hypothesis for$\alpha_i$:
+$$H_0:all\  \alpha_i=0\  \ H_1:not\ all \ \alpha_i=0$$
+
+<br>The hypothesis for$\beta_j$\:
+$$H_0:all \ \beta_j=0\  \ H_1:not\ all \ \beta_j=0$$
+<br>
+<br>
+```{r echo=FALSE}
+test = Anova(lm(math_grade~class_type+schoolid, data=data3), type="II");test
+```
+
+<br>Both class type and school ID exhibit statistically significant
+effects on grades. Thus, it can be concluded that variations exist in
+1st-grade math scaled scores based on class types.
+<br>
+<br>
+<br>Given that our primary goal is to explore the impact of class type on math scores, we are particularly interested in further comparing the differences in math scores across various class types to identify the class type with the best math performance.  Tukey's range test is a multiple comparison method used to determine if there are significant differences between groups following an ANOVA.  Its core principle involves conducting pairwise comparisons among multiple sample means.  Utilizing this method, we perform Tukey's range test on the aforementioned model to meticulously analyze the distinctions between each class type's math scores.
+<br>let$\alpha=0.05$. In the table below, 1 indicates small, 2 indicates regular, and 3 indicates regular+aide.
+```{r echo=FALSE}
+TukeyHSD(aov(nointer), "class_type", conf.level=1-0.05)
+```
+<br>In the comparison between groups 2 and 1, the difference (diff) is -12.53590, meaning the average math score of the regular class is 12.53590 points lower than that of the small class.  The confidence interval does not include zero, indicating a statistically significant difference between categories 2 and 1.  The adjusted p-value is also well below 0.05, suggesting we can be very confident that these two class types are statistically distinct.
+<br>In the comparison between groups 3 and 1, thedifference is -10.85177, indicating the average math score of the regular + aide class is 10.85177 points lower than that of the small class.  The confidence interval does not include zero, and the adjusted p-value is significantly less than 0.05, implying a statistically significant difference between these class types as well.
+<br>However, in the comparison between groups 3 and 2, the difference is 1.68413, suggesting the average math score of the regular + aide class is 1.68413 points higher than that of the regular class.  The confidence interval includes zero, and the adjusted p-value is 0.7650696, significantly above 0.05, indicating insufficient evidence to support a statistically significant difference between categories 3 and 2.
+<br>These are the interpretations of the results from Tukey's range test.  Through this analysis, we can easily identify that the small class type exhibits the best math performance.  Moreover, based on the quantitative results, teaching in small classes may have a greater positive impact on first-grade math scores compared to assigning aides to regular classes.
+<br>
+<br>
+
+### Further analysis using mean
+<br>We adopt the mean as an alternative approach. Let’s run the same tests using the same processing methods for it:
+```{r echo=FALSE}
+data4 <- data2 %>%
+  group_by(g1tchid, g1schid, g1classtype) %>%
+  summarise(median_math_score = mean(g1tmathss, na.rm = TRUE)) %>%
+  ungroup()
+colnames(data4)[colnames(data4) == "g1tchid"] <- "teacherid"
+colnames(data4)[colnames(data4) == "g1schid"] <- "schoolid"
+colnames(data4)[colnames(data4) == "g1classtype"] <- "class_type"
+colnames(data4)[colnames(data4) == "median_math_score"] <- "math_grade"
+```
+
+Similarly, utilizing Analysis of Variance to compare two models：
+
+```{r echo=FALSE}
+nointer2 = lm(math_grade~class_type+schoolid, data=data4)
+withinter2 = lm(math_grade~class_type+schoolid+class_type:schoolid, data=data4)
+anova(nointer2, withinter2)
+```
+
+P-value is large, which means we should accept the null hypothesis. In
+this case, we should drop the interaction terms too.
+<br>
+<br>The table below reports the estimated coefficients of beta for each
+school id. You can also retrieve the estimated coefficients by searching
+school id.
+```{r echo=FALSE}
+coeff = as.data.frame(nointer2$coefficients)
+subset_data = coeff %>% slice(-(1:3))
+datatable(subset_data, options = list (pageLength =5), colnames = c('ID', 'coefficients '),caption = 'coefficients of beta for each school id')
+```
+
+```{r echo=FALSE}
+test = Anova(lm(math_grade~class_type+schoolid, data=data4), type="II");test
+```
+<br>Class type and school ID both demonstrate statistically significant impacts on grades, leading to the conclusion that differences in 1st-grade math scaled scores are influenced by class types.
+<br>Similarly, in order to identify the class type with the highest math performance, we conducted Tukey's range test.
+```{r echo=FALSE}
+TukeyHSD(aov(nointer2), "class_type", conf.level=1-0.05)
+```
+<br>After replacing the summary measure with mean, the results of the above tests are basically the same as the median.
+<br>Both class type and school ID exhibit statistically significant
+effects on grades. Thus, there are variations exist in
+1st-grade math scaled scores based on class types.
+Based on the Tukey's range test, grades in it can be seen that the small class type is linked with the highest
+math scaled scores in 1st grade.
+<br>
+
+# Sensitivity analysis
+
+## Model diagnostic with median as summary measure
+<br>Given that we believe the median serves as a summary measure that more accurately reflects student performance, let's first conduct a diagnostic of the model when using the median as the summary measure. We first plot the residuals vs fitted plot to check the linear assumption and Q-Q plot.
+```{r, fig.height = 5, fig.width = 10, fig.align = "center", warning=FALSE, message=FALSE, echo=FALSE}
+par(mfrow=c(1, 2))
+plot(nointer, 1)
+plot(nointer, 2)
+```
+<br>Given the absence of discernible patterns in the residuals across fitted values, we can affirm the validity of the linear assumption.
+<br>
+<br>Next, let's check the normality assumption by using Shapiro-Wilk normality test.
+```{r echo=FALSE}
+shapiro.test(nointer$residuals)
+```
+<br>P- value is not smaller than the significant level that we often use, so we cannot reject the null hypothesis. In hypothesis testing for normality, the null hypothesis is that the data follow a normal distribution. Although，Q_Q plot shows a small heavier tails, it's negligible. Most of the points fall on the line. Therefore the normality assumption seems to hold.
+<br>
+<br>
+<br>We use Levene's Test to check homogeneity of Variance.
+```{r echo=FALSE}
+leveneTest(math_grade~class_type*schoolid, data=data3)
+```
+We should reject the null hypothesis since P- value is very small. In the hypothesis testing for homogeneity of variances, the null hypothesis is that all groups have equal variances. Therefore, same variance assumption cannot be hold.
+<br>
+LeveneTest generally considers the interaction terms when running the entire model. Let's look at the variance homogeneity of the two factors separately.
+```{r echo=FALSE}
+data3$residuals <- residuals(nointer)
+leveneTest(residuals~class_type, data=data3)
+leveneTest(residuals~schoolid, data=data3)
+```
+<br>The two results shown above are variance homogeneity tests for class type and school id. We can see that the test for class type failed.The hypothesis of variance homogeneity of factor school id is valid.
+<br>For sensitivity analysis, when the median is used as the summary measure, the test of homogeneity of variance cannot pass.
+<br>When the median is used as the summary measure in sensitivity analysis and the test for homogeneity of variance fails, it suggests that the variances across groups are not equal. The assumption of equal variances (homogeneity of variances) is a crucial prerequisite for conducting traditional ANOVA tests. A failure to meet this assumption might indicate that the results of the ANOVA could be unreliable or invalid for comparing group means. In search of a more robust alternative, we attempted using the mean as the summary measure instead.  The newly processed data were then input into the two-way ANOVA model discussed in the previous section, followed by a diagnostic of the model.
+
+## Model diagnostic with mean as summary measure
+<br>Let’s explore another summary measures: mean. Its model is the same as the above, only the value of math score are different. We also conduct same sensitivity analysis.
+```{r, fig.height = 5, fig.width = 10, fig.align = "center", warning=FALSE, message=FALSE, echo=FALSE}
+par(mfrow=c(1, 2))
+plot(nointer2, 1)
+plot(nointer2, 2)
+```
+<br>Given that there is no obvious trend in the residuals of the fitted values, we can assume that the linear hypothesis holds.
+
+```{r echo=FALSE}
+shapiro.test(nointer2$residuals)
+```
+<br>P- value is very small, so we should reject the null hypothesis. Q_Q plot shows heavier tails. The normality assumption seems to failed.
+<br>
+```{r echo=FALSE}
+data4$residuals <- residuals(nointer2)
+leveneTest(residuals~class_type, data=data4)
+leveneTest(residuals~schoolid, data=data4)
+```
+<br>For mean, the hypothesis of homogeneity of variance for both factors are valid. But, when the mean is used as the summary measure, the test of normality assumption of residuals cannot pass.
+<br>After all kinds of data transformation, the homogeneity of variance and residual normality test still cannot pass the same time. Thus, it seems inpossible to modify the model diagnosis results by transforming the data.
+<br>In general, we can also consider Mixed Effects models.  Mixed Effects Model allows random effects, which can be used to simulate variance heterogeneity between different groups.  In general, we are more interested in the effects of class type, and we can consider modeling class type as a random effect to solve the homogeneity of variance problem and better explore the effects of class type.  But with a fixed number of class types, rather than randomly selected from a larger population of classes, treating them as random effects may not be the best choice.  Meanwhile, the homogeneity of variance of class type is worse.  In this case, when school id is considered as a random effect to consider the variance heterogeneity among different schools, the model is not meaningful.  So the Mixed Effects Model doesn't work that well in this case.
+<br>
+
+## Nonparametric method
+<br>The assumptions of the model do not hold, which means we might need to look for other more robust methods of variance analysis. Given that the model includes two factors, the Kruskal-Wallis (K-W) or Welch's tests are of limited utility. We can consider using non-parametric methods, which offer several advantages. Non-parametric methods do not rely on assumptions such as homogeneity of variances. Moreover, they are not sensitive to missing values, making them particularly suitable for this dataset with a large number of missing values.
+<br>
+<br>The Friedman test, a nonparametric equivalent to the traditional ANOVA that ranks data, cannot be applied in this scenario due to the incomplete design of our dataset – specifically, the absence of all class types within some schools. As an alternative, the Skillings–Mack test, which adapts the Friedman test for situations with missing data, can be utilized. Additionally, given that the Skillings–Mack test is designed for balanced incomplete block designs, it necessitates transforming our data to compute averages by class types and school IDs.
+```{r echo=FALSE}
+data5 = aggregate(data2$g1tmathss, by=list(data2$g1classtype, data2$g1schid), mean)
+colnames(data5) = c("star", "schoolid", "grade")
+ClassGivenSchool = as.matrix(pivot_wider(data5,names_from=star, values_from=grade)[,2:4])
+SchoolGivenClass = t(ClassGivenSchool)
+skillingsMackTest(ClassGivenSchool)
+skillingsMackTest(SchoolGivenClass)
+```
+P- values are very small, so we should reject the null hypothesis. The null hypothesis of the Skillings-Mack test is that there is no difference in the groups being compared. Based on the information presented in the this tables, it's evident that both class types and school IDs have an impact on math scores. Consequently, our conclusion are defensible.
+<br>
+
+## Generalized Estimation Equations
+<br>The problem of variance variance and related structure in data can also be solved by using Generalized Estimation Equations(GEE). GEE is suitable for processing correlational or cluster data, so it is possible to simulate variance heterogeneity between different groups through random effects.
+<br>Class type is the factor we are more interested in, so we choose schoolid as the clustering ID. This means that we assume that schools are the basis for forming data clusters, possibly because students in the same schools are affected by similar educational resources and school environments. In this case, using schoolid as a cluster ID can be used to control intrinsic correlations at the school level.
+```{r echo=FALSE}
+library(geepack)
+gee_model <- geeglm(math_grade ~ class_type + schoolid, 
+                    data = data3, 
+                    id = schoolid,  
+                    family = Gamma(link = "inverse"),  
+                    corstr = "exchangeable")  
+summary_info <- summary(gee_model)
+coefficients_info <- summary_info$coefficients
+coeff_df2 <- as.data.frame(coefficients_info)
+names(coeff_df2) <- c("Estimate", "Std. Error", "Wald", "Pr(>|W|)")
+datatable(coeff_df2, options = list(pageLength = 5))
+```
+<br>The above presents the estimated results of the model, including estimates of the coefficients, standard errors, Wald statistics, and their p-values. The Wald statistic is calculated by the ratio of the parameter estimate to its standard error. Specifically, the Wald test assesses whether each coefficient in the model is significantly different from zero. In most cases, the value of the parameter under the null hypothesis is 0. All the p-values are very small, so we should reject the null hypothesis, which means that their coefficients are not zero, suggesting that class type and school ID does have an significant effect on math scores. This is consistent with our previous exploration.
+<br>
+
+## Covariates
+<br>In analysis of variance (ANOVA), if there are too many variables, it is possible to control for the effects of other variables that may affect the response variable but are not the focus of the study by considering the covariates. This practice can improve the ability to explain the variability of dependent variables in experimental or observational studies, thus enhancing the accuracy and reliability of research results. 
+<br>In this case, we can consider three covariates: class size, kindergarten math scores, and teacher's teaching ability. To reduce the complexity of the model, we will consider these variables one by one.
+<br>
+
+### Class size
+The STAR designation of the class as small (13-17 students), regular (22-25 students). 
+When a covariate is included in an ANOVA model, the analysis is called an analysis of Covariance (ANCOVA). In this model, covariables are usually continuous variables, and independent variables are usually categorical variables. Continuous variables that are added to the model are usually automatically treated by R as covariates.
+<br>Let's try the ANCOVA model first:
+```{r echo=FALSE}
+data6 <- data1 %>%
+  filter(!is.na(g1tchid) & !is.na(g1classtype) & !is.na(g1schid) & !is.na(g1tmathss)& !is.na(g1classsize))
+
+data7 <- data6 %>%
+  group_by(g1tchid, g1schid, g1classtype,g1classsize) %>%
+  summarise(median_math_score = median(g1tmathss, na.rm = TRUE)) %>%
+  ungroup()
+colnames(data7)[colnames(data7) == "g1tchid"] <- "teacherid"
+colnames(data7)[colnames(data7) == "g1schid"] <- "schoolid"
+colnames(data7)[colnames(data7) == "g1classtype"] <- "class_type"
+colnames(data7)[colnames(data7) == "median_math_score"] <- "math_grade"
+colnames(data7)[colnames(data7) == "g1classsize"] <- "class_size"
+
+cols_to_factor <- c("schoolid", "class_type")
+
+data7[cols_to_factor] <- lapply(data7[cols_to_factor], factor)
+```
+
+
+```{r echo=FALSE}
+Anova(lm(math_grade ~ class_type + schoolid + class_size, data = data7), type = "II")
+```
+We added class size as a covariate after reprocessing the data. As we can see from the table above, class size is not a significant variable. The p-value for class size is 0.6201, while the p-value for class type is 0.2561. This suggests that it is highly probable that class type has a greater impact on math scores than class size does. At the same time, it can also be seen that the school may have a greater impact on students' math score.
+<br>
+<br>The following are the relevant model diagnostics.
+```{r echo=FALSE}
+fit1=lm(math_grade ~ class_type + schoolid + class_size, data = data7)
+```
+
+```{r, fig.height = 5, fig.width = 10, fig.align = "center", warning=FALSE, message=FALSE, echo=FALSE}
+par(mfrow=c(1, 2))
+plot(fit1, 1)
+plot(fit1, 2)
+```
+
+```{r echo=FALSE}
+shapiro.test(fit1$residuals)
+```
+
+```{r echo=FALSE}
+data7$residuals <- residuals(fit1)
+leveneTest(residuals~class_type, data=data7)
+leveneTest(residuals~schoolid, data=data7)
+```
+
+Since class size is a quantitative variable, it cannot participate in the Levene Test. It can be observed that the variance homogeneity of class type is still poor, while all other model diagnostics are passed.
+<br>
+<br>
+For this variable, we can also explore whether class size has an impact on math score in the same type of class in the same school.
+Let's try the mixed effects model. We set school and class type as a fixed effect.
+```{r echo=FALSE}
+fit2<- lmer(math_grade ~ class_size + (1 | schoolid) + (1 | class_type), data = data7)
+summary(fit2)
+summary_model <- summary(fit2)
+coef_summary <- summary_model$coefficients
+p_values <- 2 * (1 - pnorm(abs(coef_summary[, "t value"])))
+names(p_values) <- rownames(coef_summary)
+cat("P values in the model:\n")
+print(p_values)
+```
+It can be seen from the p-value that class size seems to has an impact on math score in the same type of class in the same school. But the issue of homogeneity of variance requires resolution through alternative methods.
+<br>
+
+### Math scores in kindergarten
+<br>The education students receive in kindergarten has a big impact on their later development, so it is very reasonable to consider this variable. From the perspective of control variables, only students with similar math scores in kindergarten before the first grade can be comparable, so they can be placed into different types of classes to see the impact of class type on their math scores in the first grade.
+```{r echo=FALSE}
+data6 <- data1 %>%
+  filter(!is.na(g1tchid) & !is.na(g1classtype) & !is.na(g1tmathss)& !is.na(gktmathss))
+
+data8 <- data6 %>%
+  group_by(g1tchid, g1classtype) %>%
+  summarise(
+    median_math_score_g1 = median(g1tmathss, na.rm = TRUE),
+    median_math_score_gk = median(gktmathss, na.rm = TRUE)
+  ) %>%
+  ungroup()
+
+colnames(data8)[colnames(data8) == "g1tchid"] <- "teacherid"
+colnames(data8)[colnames(data8) == "g1classtype"] <- "class_type"
+colnames(data8)[colnames(data8) == "median_math_score_g1"] <- "math_grade_1"
+colnames(data8)[colnames(data8) == "median_math_score_gk"] <- "math_grade_k"
+cols_to_factor <- c("class_type")
+data8[cols_to_factor] <- lapply(data8[cols_to_factor], factor)
+```
+The data was reprocessed to get the median math scores for each teacher's students in kindergarten and first grade. Let's look at the distribution of median kindergarten grades. The distribution of median scores in kindergarten closely mirrors that of the first grade, generally exhibiting a normal distribution with a slight skew.
+```{r, fig.height = 3, fig.width = 5, fig.align = "center", warning=FALSE, message=FALSE, echo=FALSE}
+ggplot(data8, aes(x = math_grade_k)) +
+  geom_bar(fill = "skyblue") +
+  labs(title = "Distribution of Math Scores in kindergarten ", x = "Median of Math Score", y = "Density")
+
+```
+<br>We carry out a block design to group kindergarten scores. For each teacher, we want to explore whether different class types in each district had any effect on their median first-grade math scores. The design of the block must ensure that there is not much difference in kindergarten score within each block, but at the same time ensure that there are three class types within each block.
+```{r echo=FALSE}
+library(dplyr)
+
+data9 <- data8 %>%
+  mutate(math_grade_k_group = cut(math_grade_k,
+                                  breaks = quantile(math_grade_k, probs = seq(0, 1, by = 1/3), na.rm = TRUE),
+                                  include.lowest = TRUE,
+                                  labels = c("Low", "Medium", "High")))
+
+```
+<br>Quantile binning is a data preprocessing technique that divides the range of a continuous variable into several equal parts, each containing approximately the same number of data points. This method is often used to transform continuous variables into categorical ones or to create stratified variables. Quantile binning offers numerous benefits, such as reducing the impact of outliers by assigning them to their respective quantile intervals and addressing skewed data distributions, making the transformed categorical variables more suitable for statistical modeling. Additionally, it ensures that each group contains a roughly equal number of observations, facilitating more balanced comparisons and analyses by avoiding issues with overly large or small group sizes.
+<br>We divided the median kindergarten math scores into three groups based on quantile binning. Low (<475), Medium (475-500) and High (<500). And define a new variable for the grouping of kindergarten score. The plot below shows the distribution of kindergarten median score for this variable.
+```{r, fig.height = 3, fig.width = 6, fig.align = "center", warning=FALSE, message=FALSE, echo=FALSE}
+ggplot(data9, aes(x = math_grade_k_group, y = math_grade_k, fill = math_grade_k_group)) +
+  geom_boxplot() +
+  labs(title = "Boxplot of 1st Grade Math Scores by Kindergarten Score Groups",
+       x = "Kindergarten Math Score Group",
+       y = "Kindergarten Math Score") +
+  scale_fill_brewer(palette = "Pastel1") 
+```
+<br>The figure below displays box plots of first-grade math scores grouped by kindergarten math performance. It is observable that classes with higher kindergarten math scores tend to have relatively higher first-grade math scores as well. This indicates that kindergarten math performance likely has an impact on first-grade math scores, making it necessary to consider this variable.
+```{r, fig.height = 3, fig.width = 6, fig.align = "center", warning=FALSE, message=FALSE, echo=FALSE}
+ggplot(data9, aes(x = math_grade_k_group, y = math_grade_1, fill = math_grade_k_group)) +
+  geom_boxplot() +
+  labs(title = "Boxplot of 1st Grade Math Scores by Kindergarten Score Groups",
+       x = "Kindergarten Math Score Group",
+       y = "1st Grade Math Score") +
+  scale_fill_brewer(palette = "Pastel1") 
+```
+
+<br>Because we are interested in whether class type affects the median math scores in the first grade for classes with similar median math scores in kindergarten, we have designed a mixed-effects model with class type and kindergarten performance as factors, treating kindergarten math scores as a fixed effect. This approach allows us to observe the impact of different class types on first-grade math scores.
+```{r echo=FALSE}
+fit3 <- lmer(math_grade_1 ~ class_type + (1 | math_grade_k_group), data = data9)
+summary(fit3)
+summary_model <- summary(fit3)
+coef_summary <- summary_model$coefficients
+p_values <- 2 * (1 - pnorm(abs(coef_summary[, "t value"])))
+names(p_values) <- rownames(coef_summary)
+cat("P values in the model:\n")
+print(p_values)
+```
+<br>The P-value for class type are very small. For classes with similar kindergarten math scores, the type of class they were in had a significant impact on their first-grade math scores.
+<br>
+
+### Teacher's teaching ability
+<br>We also want to consider a indicator of teachers' teaching ability. In the dataset, there are three indicators that can reflect a teacher's capability: the highest educational attainment of the teacher, the number of years of teaching experience, and the teacher's career level. To reduce the complexity of the model, we aim to select or aggregate one new variable to represent the teaching ability of the teacher.
+```{r echo=FALSE}
+data6 <- data1 %>%
+  filter(!is.na(g1tchid) & !is.na(g1classtype) & !is.na(g1tmathss)& !is.na(g1thighdegree)& !is.na(g1tcareer)& !is.na(g1tyears))
+
+data10 <- data6 %>%
+  group_by(g1tchid, g1classtype, g1thighdegree, g1tcareer, g1tyears ) %>%
+  summarise(
+    median_math_score = median(g1tmathss, na.rm = TRUE),
+  ) %>%
+  ungroup()
+
+colnames(data10)[colnames(data10) == "g1tchid"] <- "teacherid"
+colnames(data10)[colnames(data10) == "g1classtype"] <- "class_type"
+colnames(data10)[colnames(data10) == "median_math_score"] <- "math_grade"
+colnames(data10)[colnames(data10) == "g1thighdegree"] <- "degree"
+colnames(data10)[colnames(data10) == "g1tcareer"] <- "career_level"
+colnames(data10)[colnames(data10) == "g1tyears"] <- "teaching_experience"
+cols_to_factor <- c("class_type","degree","career_level","teaching_experience")
+data10[cols_to_factor] <- lapply(data10[cols_to_factor], factor)
+```
+<br>We will first incorporate class type and three variables representing teacher competency into a simple regression model to identify which variables are more significant.
+```{r echo=FALSE}
+fit4 <- lm(math_grade ~  class_type + degree + career_level + teaching_experience, data = data10)
+summary_info3 <- summary(fit4)
+coefficients_info3 <- summary_info3$coefficients
+coeff_df3 <- as.data.frame(coefficients_info3)
+names(coeff_df3) <- c("Estimate", "Std. Error", "t value", "Pr(>|t|)") 
+datatable(coeff_df3, options = list(pageLength = 5))
+```
+Through a simple regression, we can find that teaching experience has a more significant impact on math scores compared to the other two variables, although its effect might not be as large as that of class type.  Furthermore, after categorizing teaching experience as a categorical variable, its significance in the model increases.  Similar to the earlier grouping design for kindergarten scores, categorizing teaching experience allows us to explore the impact of class type on math scores within different groups.
+
+```{r echo=FALSE}
+data6 <- data1 %>%
+  filter(!is.na(g1tchid) & !is.na(g1classtype) & !is.na(g1tmathss)& !is.na(g1tyears))
+
+data11 <- data6 %>%
+  group_by(g1tchid, g1classtype, g1tyears ) %>%
+  summarise(
+    median_math_score = median(g1tmathss, na.rm = TRUE),
+  ) %>%
+  ungroup()
+
+colnames(data11)[colnames(data11) == "g1tchid"] <- "teacherid"
+colnames(data11)[colnames(data11) == "g1classtype"] <- "class_type"
+colnames(data11)[colnames(data11) == "median_math_score"] <- "math_grade"
+colnames(data11)[colnames(data11) == "g1tyears"] <- "teaching_experience"
+
+```
+
+
+Observing the distribution of teaching experience of teachers, we can notice that the data exhibits significant skewness.
+```{r, fig.height = 3, fig.width = 5, fig.align = "center", warning=FALSE, message=FALSE, echo=FALSE}
+ggplot(data11, aes(x = teaching_experience)) +
+  geom_bar(fill = "skyblue") +
+  labs(title = "Distribution of teaching experience of teachers ", x = "The number of years of teaching experience", y = "Density")
+
+```
+<br>The quantile is used to cut the teaching_experience variable to ensure that there are roughly equal numbers of teachers in each group. This approach could help us better observe the potential impact of teachers with different levels of teaching experience on students' math scores.
+```{r echo=FALSE}
+library(dplyr)
+
+data12 <- data11 %>%
+  mutate(teaching_experience_group = cut(teaching_experience,
+                                         breaks = quantile(teaching_experience, probs = seq(0, 1, by = 0.25), na.rm = TRUE),
+                                         include.lowest = TRUE,
+                                         labels = c("Very Low", "Low", "High", "Very High")))
+```
+
+We used quantiles to classify teachers into four groups based on their teaching experience: "Very Low (1-5 years)", "Low (6-11 years)", "High (12-17 years)", "Very High (18-42 years)".
+```{r, fig.height = 3, fig.width = 8, fig.align = "center", warning=FALSE, message=FALSE, echo=FALSE}
+ggplot(data12, aes(x = teaching_experience_group, y = math_grade, fill = teaching_experience_group)) +
+  geom_boxplot() +
+  labs(title = "Boxplot of 1st Grade Math Scores by teaching experience group",
+       x = "Teaching experience group",
+       y = "1 st grade Math Score") +
+  scale_fill_brewer(palette = "Pastel1") 
+```
+<br>From this graph, we can see that the effect of teaching experience on math scores may not be that significant. It may looks like grouping studies of teaching experience has little significance in this dataset.
+
+<br>We utilized a 2-way ANOVA, considering teaching experience and class type as factors. Initially, we compared models with and without interaction terms. The P-value is large, indicating that we should accept the null hypothesis. In this case, we should drop the interaction terms. We decided to use the model without interaction terms and surprisingly found that, except for the group with teaching experience of over 18 years (i.e., the "very high" teaching experience group), all other results were significant. This suggests that teaching experience, when below 18 years, significantly impacts first-grade students' math scores. This indicates that considering variables reflecting teaching experience in evaluating student performance is reasonable.   
+```{r echo=FALSE}
+data12$teaching_experience_group <- as.factor(data12$teaching_experience_group)
+data12$class_type <- as.factor(data12$class_type)
+
+nointer3 = lm(math_grade~class_type+teaching_experience_group, data=data12)
+withinter3 = lm(math_grade~class_type+teaching_experience_group+class_type:teaching_experience_group, data=data12)
+anova(nointer3, withinter3)
+summary(nointer3)
+```
+<br>Let's define a mixed-effects model, setting teaching experience as a fixed effect and class type as a random effect, to test whether class type has a significant impact on math scores among classes with similar levels of teacher teaching experience. The P value are very small. We find that class type still has a significant impact on first-grade math scores, which is consistent with our hypothesis. Below are the diagnostic results for this model, showing that all mode diagnosticl tests have been passed, proving the conclusions drawn from this model are reliable. Therefore, the conclusions we previously drew are tenable.
+```{r echo=FALSE}
+fit5 <- lmer(math_grade ~ class_type + (1 | teaching_experience_group), data = data12)
+summary(fit5)
+summary_model5 <- summary(fit5)
+coef_summary5 <- summary_model5$coefficients
+p_values <- 2 * (1 - pnorm(abs(coef_summary5[, "t value"])))
+names(p_values) <- rownames(coef_summary5)
+cat("P values in the model:\n")
+print(p_values)
+```
+
+
+
+```{r, fig.height = 5, fig.width = 10, fig.align = "center", warning=FALSE, message=FALSE, echo=FALSE}
+par(mfrow=c(1, 2))
+plot(nointer3, 1)
+plot(nointer3, 2)
+shapiro.test(nointer3$residuals)
+```
+
+
+```{r echo=FALSE}
+data12$residuals <- residuals(nointer3)
+leveneTest(residuals~class_type, data=data12)
+leveneTest(residuals~teaching_experience_group, data=data12)
+```
+<br>
+
+# Discussion 
+
+## Selection Bias 
+<br>Selection Bias is a type of bias in statistics or research that occurs when the study sample is not randomly selected from the target population. This bias can lead to the sample inaccurately representing the entire population, thus affecting the generalizability and credibility of the research findings. Such bias may result in misleading conclusions because the analysis might reflect the bias of the sample selection process, rather than the actual characteristics of the population or the true relationships between variables. 
+<br>The table below shows the frequency table of students' and teachers' races. It can be seen that the majority of students are Caucasian and African American, with the number of Caucasians nearly double that of African Americans. The sample sizes of other races are so small that they can be considered negligible. Meanwhile, all teachers are either Caucasian or African American, with a ratio of nearly 5:1. The research findings might not be generalizable to other races or ethnic groups. For example, the study might find that changes in class type are effective for Caucasian and African American students, but it is unclear whether this intervention would also apply to students of other races, such as Asians or Hispanics. The study might fail to capture the dynamics and interactions between different races and how these interactions affect the variables of interest. 
+<br>From the perspective of controlling variables, if the focus is solely on the impact of class type on first-grade math scores, one could consider randomly selecting samples from the population to ensure each individual has an equal chance of being selected or consider stratified sampling. 
+<br>Similarly, teachers' cultural backgrounds and teaching methods may be influenced by their personal experiences. Having only Caucasian and African American teachers might limit the diversity of teaching styles and cultural sensitivity, which could impact the learning experiences and scores of students from different cultural backgrounds. Especially in researching math scores, adding more Asian samples could potentially offer more diverse insights.
+```{r echo=FALSE}
+data13 <- data1 %>%
+  filter(!is.na(race) &  !is.na(g1tmathss))
+data13$race <- factor(data13$race,
+                      levels = c(1, 2, 3, 4, 5, 6),
+                      labels = c("White", "Black", "Asian", "Hispanic", " Native American", "Other"))
+
+dfrace1 <-table(data13$race)
+dfrace1 <-t(as.data.frame(dfrace1))
+
+data14 <- data1 %>%
+    filter(!is.na(g1trace) &  !is.na(g1tmathss))
+data14$g1trace <- factor(data14$g1trace,
+                      levels = c(1, 2, 3, 4, 5, 6),
+                      labels = c("White", "Black", "Asian", "Hispanic", " Native American", "Other"))
+
+data15 <- data14 %>%
+  group_by(g1tchid, g1classtype, g1trace) %>%
+  summarise(
+    median_math_score = median(g1tmathss, na.rm = TRUE),
+  ) %>%
+  ungroup()
+dfrace2 <-table(data15$g1trace)
+dfrace2 <-t(as.data.frame(dfrace2))
+```
+
+```{r, echo=FALSE, results='asis'}
+kable(dfrace1, "html",  row.names = FALSE, caption = "Race Frequency Table for Student") %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive"))
+```
+
+```{r, echo=FALSE, results='asis'}
+kable(dfrace2, "html",  row.names = FALSE, caption = "Race Frequency Table for Teacher") %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive"))
+```
+
+```{r echo=FALSE}
+model15 <- aov(median_math_score ~ g1trace + g1classtype, data = data15)
+summary(model15)
+```
+
+
+```{r, fig.height = 5, fig.width = 10, fig.align = "center", warning=FALSE, message=FALSE, echo=FALSE}
+par(mfrow=c(1, 2))
+plot(model15, 1)
+plot(model15, 2)
+shapiro.test(model15$residuals)
+```
+
+
+```{r echo=FALSE}
+data15$residuals <- residuals(model15)
+leveneTest(residuals~g1trace, data=data15)
+leveneTest(residuals~g1classtype, data=data15)
+```
+
+
+
+```{r, fig.height = 3, fig.width = 5, fig.align = "center", warning=FALSE, message=FALSE, echo=FALSE}
+ggplot(data15, aes(x = g1trace, y = median_math_score, fill = g1trace)) +
+  geom_boxplot() +
+  labs(title = "Boxplot of Median Math Grades by Teacher Race",
+       x = "Teacher Race",
+       y = "Median Math Grade") +
+  theme_minimal() +
+  scale_fill_brewer(palette = "Pastel1")
+
+
+```
+<br>
+<br>In our analysis using a 2-way ANOVA model, we observed a significant effect of teacher race on student math scores, with students of White teachers performing better than those of Black teachers. The conclusions of this model are reliable, as all model diagnostics have been successfully passed. It is crucial to interpret these findings within a broader context, acknowledging that many factors contribute to student achievement.  This includes, but is not limited to, access to resources, teaching methodologies, and socio-economic backgrounds.  It is imperative that these results not be used to reinforce stereotypes or justify discriminatory practices.  Instead, they highlight the need for further investigation into the systemic factors influencing educational outcomes and the importance of developing strategies to ensure all students have access to high-quality education.  Future research should aim to uncover the underlying causes of these disparities, focusing on constructive solutions to enhance teaching effectiveness across diverse educational settings.
+
+## Suggestion and reflection
+<br>Schools should prioritize small class sizes for students, as these settings foster more personalized instruction, crucial for early student development. Consideration should be given to reallocating resources to facilitate smaller class sizes, potentially requiring adjustments in budgeting for teacher salaries, classroom space, and teaching materials to make this approach more feasible and effective.
+<br>However, implementing small class sizes broadly may pose challenges, notably in increasing educational costs. Careful management of available space, teacher availability, and budget constraints is necessary. A cost-benefit analysis is essential to ensure the financial sustainability of reduced class sizes and that the educational benefits justify the costs.
+<br>Furthermore, the impact of small class sizes may differ based on other factors, such as student ethnicity, school environment, and curriculum. Additional considerations are required for broader application, including the long-term effects of small class sizes beyond first grade. Although this report focuses on first-grade math scores and attempts to account for class size, kindergarten scores, and teacher ability, other significant variables like parental involvement or socioeconomic status, not considered in this report, may also affect the outcomes.
+
+# Acknowledgement
+
+In the preparation of this report, I integrated code, terminology, and formulas from the lecture notes, as well as the code from the STA 206 discussion notes. I am grateful to my classmates—Feini Pek, Fanling Liu, and Jieying Ma—for their helpful suggestions throughout this process. Additionally, I wish to express my gratitude to STA 207 professor and teaching assistant for their supportive directions.        
+
+# Reference
+
+Achilles, C. M. (2012). Class-Size Policy: The STAR Experiment and Related Class-Size Studies. NCPEA Policy Brief. Volume 1, Number 2. NCPEA Publications.
+
+Finn, J. D., & Achilles, C. M. (1999). Tennessee’s Student/Teacher Achievement Ratio (STAR) Project: Technical Report 1996-97. Nashville, TN: Tennessee State Department of Education.
+
+
+# Session info
+
+```{r}
+sessionInfo()
+```
+
+# Code Appendix
+```{r getlabels, echo = FALSE}
+labs = knitr::all_labels()
+labs = labs[!labs %in% c("setup","getlabels","allcode")]
+```
+
+```{r allcode, ref.label = labs, eval = FALSE}
+```
